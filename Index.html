@@ -1,0 +1,621 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+<title>Display Size Scaler</title>
+<link rel="icon" type="image/png" href="Icon.png?">
+<title>Display Size Scaler</title>
+<style>
+  :root {
+    --bg: #0f172a; --panel: #1e293b; --accent: #38bdf8; --accent-hover: #0ea5e9;
+    --text: #94a3b8; --text-light: #e2e8f0; --border: #334155;
+    --ruler-bg: rgba(15, 23, 42, 0.95); --ruler-tick: #64748b;
+  }
+  
+  /* Light Mode Variables - UPDATED FOR HIGH CONTRAST */
+  body.light-mode {
+    --bg: #f1f5f9; 
+    --panel: #ffffff; 
+    --accent: #0284c7; /* Darker blue for visibility */
+    --accent-hover: #0369a1;
+    --text: #334155; /* Slate-700 (Dark Grey) instead of Slate-500 */
+    --text-light: #0f172a; /* Slate-900 (Almost Black) */
+    --border: #cbd5e1;
+    --ruler-bg: rgba(255, 255, 255, 0.95); 
+    --ruler-tick: #475569; /* Darker tick marks */
+  }
+
+  body, html { height: 100%; margin: 0; font-family: 'Segoe UI', Inter, system-ui, sans-serif; background: var(--bg); color: var(--text); overflow: hidden; }
+  
+  /* Layout */
+  .app-container { display: flex; height: 100vh; position: relative; }
+  
+  /* Sidebar */
+  .sidebar {
+    width: 320px; background: var(--panel); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; z-index: 20;
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: absolute; top: 0; bottom: 0; left: 0;
+  }
+  .sidebar.collapsed { transform: translateX(-100%); }
+  
+  .sidebar-header { padding: 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+  .sidebar-content { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+  .sidebar-footer { padding: 12px; font-size: 11px; text-align: center; border-top: 1px solid var(--border); }
+
+  h1 { font-size: 16px; margin: 0; color: var(--text-light); font-weight: 600; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; margin: 0 0 8px 0; color: var(--accent); }
+
+  /* Controls */
+  .control-group { background: rgba(0,0,0,0.2); padding: 12px; border-radius: 8px; border: 1px solid var(--border); }
+  body.light-mode .control-group { background: rgba(0,0,0,0.05); border-color: #cbd5e1; }
+
+  label { display: block; font-size: 12px; margin-bottom: 4px; color: var(--text); }
+  input[type=number], input[type=text], select {
+    width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text-light);
+    padding: 6px 8px; border-radius: 4px; box-sizing: border-box; font-family: inherit;
+  }
+  
+  /* Input styling specific to light mode for better contrast */
+  body.light-mode input[type=number], 
+  body.light-mode input[type=text], 
+  body.light-mode select {
+    background: #ffffff;
+    border-color: #94a3b8;
+    color: #0f172a;
+  }
+
+  .row { display: flex; gap: 8px; }
+  .btn {
+    background: var(--accent); color: #0f172a; border: none; padding: 8px 12px;
+    border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 12px;
+    flex: 1; display: flex; align-items: center; justify-content: center; gap: 4px;
+    transition: background 0.1s;
+  }
+  body.light-mode .btn { color: #ffffff; }
+
+  .btn:hover { background: var(--accent-hover); }
+  .btn.ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
+  .btn.ghost:hover { border-color: var(--text-light); color: var(--text-light); }
+  
+  body.light-mode .btn.ghost { color: #475569; border-color: #94a3b8; }
+  body.light-mode .btn.ghost:hover { color: #0f172a; border-color: #0f172a; }
+
+  .btn.danger { background: #ef4444; color: white; }
+  .btn-square { width: 32px; height: 32px; padding: 0; flex: none; display: flex; align-items: center; justify-content: center; }
+  .tune-btn-group { display: flex; gap: 4px; margin-top: 8px; }
+  .tune-btn-group .btn { padding: 4px; font-size: 10px; }
+  
+  .toggle-btn {
+    position: absolute; top: 12px; left: 12px; z-index: 10;
+    width: 40px; height: 40px; border-radius: 8px; background: var(--panel);
+    border: 1px solid var(--border); color: var(--text-light);
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.3); transition: left 0.3s;
+  }
+  .sidebar:not(.collapsed) ~ .canvas-area .toggle-btn { left: 332px; display: none; }
+  
+  .canvas-area { flex: 1; position: relative; background: radial-gradient(circle at center, #162032 0%, #0f172a 100%); overflow: hidden; margin-left: 320px; transition: margin-left 0.3s; }
+  body.light-mode .canvas-area { background: #f1f5f9; } /* Flat light grey background for better contrast */
+
+  .sidebar.collapsed ~ .canvas-area { margin-left: 0; }
+  canvas { display: block; cursor: crosshair; touch-action: none; }
+  
+  .shape-list { display: flex; flex-direction: column; gap: 4px; max-height: 200px; overflow-y: auto; }
+  .shape-item { display: flex; align-items: center; justify-content: space-between; padding: 8px; background: rgba(255,255,255,0.03); border-radius: 4px; border: 1px solid transparent; font-size: 12px; }
+  body.light-mode .shape-item { background: rgba(0,0,0,0.05); color: #334155; }
+  
+  .shape-item.active { border-color: var(--accent); background: rgba(56, 189, 248, 0.1); }
+  body.light-mode .shape-item.active { background: rgba(2, 132, 199, 0.1); color: #0284c7; }
+
+  .shape-item button { padding: 2px 6px; font-size: 10px; }
+
+  /* --- CALIBRATION MODAL STYLES --- */
+  .modal-overlay {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.9);
+    z-index: 100; display: none; backdrop-filter: blur(4px);
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: center;
+    padding-bottom: 40px; 
+  }
+  body.light-mode .modal-overlay { background: rgba(255,255,255,0.8); }
+
+  .modal-overlay.open { display: flex; }
+  
+  #calibCanvas {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    z-index: 101; 
+    pointer-events: none; 
+  }
+
+  .modal { 
+    position: relative; z-index: 102;
+    background: var(--panel); border: 1px solid var(--border); 
+    width: 600px; max-width: 90%; padding: 20px; border-radius: 12px; 
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5); 
+    max-height: 70vh; overflow-y: auto;
+  }
+  
+  body.light-mode .modal { box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); }
+
+  .calc-box {
+    margin-top: 15px; padding: 12px; border-radius: 8px;
+    background: rgba(0,0,0,0.3); border: 1px solid var(--border);
+  }
+  body.light-mode .calc-box { background: #f8fafc; border-color: #cbd5e1; }
+  
+  /* Helpers */
+  .hidden { display: none; }
+  .stats { font-family: monospace; font-size: 11px; color: var(--accent); margin-top: 4px; }
+</style>
+</head>
+<body>
+
+<!-- Calibration Modal -->
+<div id="calibModal" class="modal-overlay">
+  <!-- Full Screen Canvas -->
+  <canvas id="calibCanvas"></canvas>
+
+  <div class="modal">
+    <h2 style="font-size:18px">Screen Calibration</h2>
+    <p style="font-size:13px; line-height:1.5; color:var(--text-light)">
+      <strong>Method 1: Visual</strong><br>
+      Align the <strong>0</strong> mark of your physical ruler with the <span style="color:#ef4444">Red Zero Line</span>.
+      Adjust the slider until the <strong>20 cm</strong> (or 10 cm) marks align perfectly.
+    </p>
+    
+    <!-- Controls -->
+    <div style="display:flex; flex-direction:column; gap:12px; margin-top: 10px;">
+      
+      <!-- Slider -->
+      <div class="row" style="align-items:center;">
+        <span style="font-size:12px; width:40px;">Coarse</span>
+        <input type="range" id="calibSlider" min="10" max="600" step="0.1" style="flex:1">
+      </div>
+
+      <!-- Fine Tune -->
+      <div class="row" style="align-items:flex-end; justify-content: space-between;">
+        <div style="flex:1;">
+          <label>Current PPI</label>
+          <input type="number" id="calibInput" step="0.01" style="width:100px; text-align:center; font-weight:bold;">
+        </div>
+        <div style="flex:2; display:flex; flex-direction:column; align-items:flex-end;">
+          <label style="align-self:center; margin-bottom:4px">Fine Tune</label>
+          <div class="tune-btn-group">
+            <button class="btn ghost" onclick="adjustCalib(-1)">-1</button>
+            <button class="btn ghost" onclick="adjustCalib(-0.1)">-0.1</button>
+            <button class="btn ghost" onclick="adjustCalib(-0.01)">.01</button>
+            <span style="width:10px"></span>
+            <button class="btn ghost" onclick="adjustCalib(0.01)">.01</button>
+            <button class="btn ghost" onclick="adjustCalib(0.1)">+0.1</button>
+            <button class="btn ghost" onclick="adjustCalib(1)">+1</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Calculator Method -->
+    <div class="calc-box">
+      <label style="color:var(--accent); font-weight:600; margin-bottom:6px;">Method 2: Calculator</label>
+      <div style="font-size:11px; margin-bottom:8px; opacity:0.8; color:var(--text)">
+        Measure the distance from the Red Zero Line to a mark on screen (e.g. 10cm). Enter the real measurement below.
+      </div>
+      <div class="row">
+        <div style="flex:1">
+          <label>Screen Reads (cm)</label>
+          <input type="number" id="calcScreenVal" value="10" />
+        </div>
+        <div style="flex:1">
+          <label>Real Measure (cm)</label>
+          <input type="number" id="calcRealVal" placeholder="e.g. 9.8" />
+        </div>
+        <button id="btnCalcPPI" class="btn" style="flex:0.8; margin-top:19px;">Calculate</button>
+      </div>
+    </div>
+    
+    <div class="row" style="margin-top:20px; border-top:1px solid var(--border); padding-top:15px; justify-content: flex-end;">
+      <button id="cancelCalib" class="btn ghost" style="flex:0; padding:8px 20px; margin-right:8px;">Cancel</button>
+      <button id="saveCalib" class="btn" style="flex:0; padding:8px 20px;">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="app-container">
+  
+  <!-- Sidebar -->
+  <div id="sidebar" class="sidebar">
+    <div class="sidebar-header">
+      <h1>Display Size Scaler</h1>
+      <!-- Buttons Group -->
+      <div style="display:flex; gap:8px;">
+        <button id="themeToggle" class="btn ghost btn-square" title="Toggle Light/Dark Mode">☀</button>
+        <button id="closeSidebar" class="btn ghost btn-square" title="Close Sidebar">✕</button>
+      </div>
+    </div>
+    <div class="sidebar-content">
+      <div class="control-group">
+        <h2>Configuration</h2>
+        <label>Pixel Density (PPI)</label>
+        <div class="row">
+          <input id="inputPPI" type="number" step="0.1" value="96" />
+          <button id="btnCalibrate" class="btn ghost">📏 Calibrate</button>
+        </div>
+        <div class="stats" id="pxMmDisplay">1 mm = 3.78 px</div>
+        <div class="row" style="margin-top:8px">
+          <button id="exportConfig" class="btn ghost">Save</button>
+          <button id="importConfig" class="btn ghost">Load</button>
+          <input type="file" id="fileInput" accept=".displayscale" style="display:none" />
+        </div>
+      </div>
+      <div class="control-group">
+        <h2>Add Object</h2>
+        <div class="row">
+          <select id="shapeType">
+            <option value="rect">Rectangle</option>
+            <option value="circle">Circle</option>
+            <option value="line">Line</option>
+          </select>
+          <button id="addShapeBtn" class="btn">Add</button>
+        </div>
+        <p style="font-size:11px; opacity:0.8; margin:8px 0 0 0; color:var(--text)">Defaults: Rect 85×54mm, Circle 50mm, Line 100mm.</p>
+      </div>
+      <div class="control-group" id="propPanel" style="display:none">
+        <h2>Selected <span id="selType"></span></h2>
+        <div id="propDims"></div>
+        <div class="row" style="margin-top:8px">
+          <button id="deleteShapeBtn" class="btn danger">Delete</button>
+          <button id="centerShapeBtn" class="btn ghost">Center</button>
+        </div>
+      </div>
+      
+      <!-- List -->
+      <div class="control-group" style="display:flex; flex-direction:column;">
+        <h2>Objects</h2>
+        <div id="shapeList" class="shape-list"></div>
+        <button id="clearAllBtn" class="btn ghost" style="margin-top:8px">Clear All</button>
+      </div>
+    </div>
+    <div class="sidebar-footer">Drag to move • Drag white handles to resize • Display Size Scaler by MrMysteryV ¯\_(ツ)_/¯</div>
+  </div>
+
+  <!-- Main Canvas -->
+  <div class="canvas-area" id="canvasContainer">
+    <div id="openSidebar" class="toggle-btn" title="Show Sidebar">☰</div>
+    <canvas id="mainCanvas"></canvas>
+  </div>
+
+</div>
+
+<script>
+const App = { ppi: 96, shapes: [], selectedId: null, dragging: null, calibPPI: 96, theme: 'dark' };
+
+const canvas = document.getElementById('mainCanvas');
+const ctx = canvas.getContext('2d', { alpha: false });
+const container = document.getElementById('canvasContainer');
+const elPPI = document.getElementById('inputPPI');
+const elShapeList = document.getElementById('shapeList');
+const elPropPanel = document.getElementById('propPanel');
+
+// Calibration Elements
+const calibCanvas = document.getElementById('calibCanvas');
+const calibCtx = calibCanvas.getContext('2d');
+const calibSlider = document.getElementById('calibSlider');
+const calibInput = document.getElementById('calibInput');
+
+function init() {
+  loadState();
+  resizeCanvas();
+  window.addEventListener('resize', () => {
+    resizeCanvas();
+    if(document.getElementById('calibModal').classList.contains('open')) resizeCalibCanvas();
+  });
+  
+  document.getElementById('closeSidebar').onclick = toggleSidebar;
+  document.getElementById('openSidebar').onclick = toggleSidebar;
+  document.getElementById('themeToggle').onclick = toggleTheme;
+
+  elPPI.addEventListener('change', (e) => setPPI(parseFloat(e.target.value)));
+  
+  document.getElementById('exportConfig').onclick = exportToFile;
+  document.getElementById('importConfig').onclick = () => document.getElementById('fileInput').click();
+  document.getElementById('fileInput').onchange = importFromFile;
+  
+  // Calibration Listeners
+  document.getElementById('btnCalibrate').onclick = openCalibration;
+  calibSlider.addEventListener('input', (e) => updateCalibState(parseFloat(e.target.value)));
+  calibInput.addEventListener('change', (e) => updateCalibState(parseFloat(e.target.value)));
+  document.getElementById('cancelCalib').onclick = () => document.getElementById('calibModal').classList.remove('open');
+  document.getElementById('saveCalib').onclick = applyCalibration;
+  
+  // Calculator Button
+  document.getElementById('btnCalcPPI').onclick = calculateFromMeasurement;
+
+  document.getElementById('addShapeBtn').onclick = addShapeFromUI;
+  document.getElementById('clearAllBtn').onclick = () => { if(confirm('Clear all?')){ App.shapes=[]; App.selectedId=null; render(); updateUI(); }};
+  document.getElementById('deleteShapeBtn').onclick = deleteSelected;
+  document.getElementById('centerShapeBtn').onclick = centerSelected;
+
+  canvas.addEventListener('pointerdown', onPointerDown);
+  canvas.addEventListener('pointermove', onPointerMove);
+  canvas.addEventListener('pointerup', onPointerUp);
+  canvas.addEventListener('wheel', (e) => { if(e.ctrlKey) e.preventDefault(); }, {passive: false});
+
+  applyTheme();
+  render();
+  updateUI();
+}
+
+function loadState() {
+  try {
+    const d = JSON.parse(localStorage.getItem('realSizeDrawer_v2') || '{}');
+    App.ppi = d.ppi || 96; App.shapes = d.shapes || []; App.theme = d.theme || 'dark';
+  } catch(e) {}
+  setPPI(App.ppi);
+}
+function saveState() { localStorage.setItem('realSizeDrawer_v2', JSON.stringify({ ppi: App.ppi, shapes: App.shapes, theme: App.theme })); }
+
+function toggleTheme() {
+  App.theme = App.theme === 'dark' ? 'light' : 'dark';
+  applyTheme();
+  saveState();
+  render();
+}
+function applyTheme() {
+  const btn = document.getElementById('themeToggle');
+  if(App.theme === 'light') {
+    document.body.classList.add('light-mode');
+    btn.textContent = '🌙';
+  } else {
+    document.body.classList.remove('light-mode');
+    btn.textContent = '☀';
+  }
+}
+
+function exportToFile() {
+  const blob = new Blob([JSON.stringify({ ppi: App.ppi, shapes: App.shapes }, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'config.displayscale';
+  a.click();
+}
+function importFromFile(e) {
+  const f = e.target.files[0]; if(!f) return;
+  const r = new FileReader();
+  r.onload = (evt) => {
+    try {
+      const d = JSON.parse(evt.target.result);
+      if(d.ppi) setPPI(d.ppi); if(d.shapes) App.shapes=d.shapes;
+      App.selectedId=null; render(); updateUI(); saveState();
+      alert('Loaded.');
+    } catch(err) { alert('Error.'); }
+    e.target.value='';
+  };
+  r.readAsText(f);
+}
+
+function resizeCanvas() {
+  const r = container.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  canvas.width = r.width * dpr; canvas.height = r.height * dpr;
+  canvas.style.width = r.width+'px'; canvas.style.height = r.height+'px';
+  ctx.scale(dpr, dpr); render();
+}
+function setPPI(v) { App.ppi = v||96; elPPI.value = parseFloat(App.ppi.toFixed(2)); document.getElementById('pxMmDisplay').textContent=`1 mm = ${(App.ppi/25.4).toFixed(3)} px`; render(); }
+function mmToPx(mm) { return mm * (App.ppi / 25.4); }
+function pxToMm(px) { return px / (App.ppi / 25.4); }
+
+function createId() { return Math.random().toString(36).substr(2, 9); }
+function getCenter() { const r = container.getBoundingClientRect(); return { x: r.width/2, y: r.height/2 }; }
+function addShapeFromUI() {
+  const t = document.getElementById('shapeType').value, c = getCenter();
+  let s = { id: createId(), type: t, x: c.x, y: c.y, selected: true };
+  if(t==='rect'){s.w=85.6;s.h=53.98;} else if(t==='circle'){s.r=25;} else if(t==='line'){s.len=100;s.angle=0;}
+  App.shapes.forEach(x=>x.selected=false); App.shapes.push(s); App.selectedId=s.id; updateUI(); render();
+}
+
+// Colors based on theme
+function getColors() {
+  const isLight = App.theme === 'light';
+  // Return high contrast dark colors for light mode objects
+  return {
+    bg: isLight ? '#f1f5f9' : '#0f172a',
+    grid: isLight ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.03)',
+    strokeNorm: isLight ? '#334155' : '#cbd5e1', // Dark grey stroke in light mode
+    strokeSel: isLight ? '#0284c7' : '#38bdf8',
+    fillNorm: isLight ? 'rgba(0,0,0,0.02)' : 'rgba(255,255,255,0.05)',
+    fillSel: isLight ? 'rgba(2,132,199,0.1)' : 'rgba(56,189,248,0.1)',
+    text: isLight ? '#0f172a' : '#94a3b8', // Almost black text in light mode
+    rulerBg: isLight ? 'rgba(255,255,255,0.95)' : 'rgba(15,23,42,0.95)',
+    rulerTick: isLight ? '#475569' : '#64748b',
+    rulerCorner: isLight ? '#ffffff' : '#0f172a'
+  };
+}
+
+function render() {
+  const w = canvas.width/(window.devicePixelRatio||1), h = canvas.height/(window.devicePixelRatio||1);
+  const C = getColors();
+  
+  ctx.fillStyle=C.bg; ctx.fillRect(0,0,w,h);
+  
+  const step=mmToPx(10); if(step>=10) {
+    ctx.beginPath(); ctx.strokeStyle=C.grid; ctx.lineWidth=1;
+    for(let x=0;x<w;x+=step){ctx.moveTo(x,0);ctx.lineTo(x,h);}
+    for(let y=0;y<h;y+=step){ctx.moveTo(0,y);ctx.lineTo(w,y);}
+    ctx.stroke();
+  }
+  
+  App.shapes.forEach(s => {
+    ctx.save(); ctx.translate(s.x, s.y);
+    const sel=s.id===App.selectedId;
+    ctx.strokeStyle=sel?C.strokeSel:C.strokeNorm; ctx.lineWidth=sel?2:1.5; ctx.fillStyle=sel?C.fillSel:C.fillNorm;
+    if(s.type==='rect'){ const pw=mmToPx(s.w), ph=mmToPx(s.h); ctx.beginPath(); ctx.rect(-pw/2,-ph/2,pw,ph); ctx.fill(); ctx.stroke(); lbl(`${s.w.toFixed(1)}×${s.h.toFixed(1)}`); }
+    else if(s.type==='circle'){ const pr=mmToPx(s.r); ctx.beginPath(); ctx.arc(0,0,pr,0,Math.PI*2); ctx.fill(); ctx.stroke(); lbl(`Ø ${(s.r*2).toFixed(1)}`); }
+    else if(s.type==='line'){
+      const l=mmToPx(s.len); ctx.rotate(s.angle);
+      ctx.beginPath(); ctx.moveTo(-l/2,0); ctx.lineTo(l/2,0); ctx.stroke();
+      ctx.fillStyle=ctx.strokeStyle; ctx.beginPath(); ctx.arc(-l/2,0,3,0,Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(l/2,0,3,0,Math.PI*2); ctx.fill();
+      ctx.rotate(-s.angle); lbl(`${s.len.toFixed(1)}`, -10);
+    }
+    ctx.restore();
+  });
+  if(App.selectedId) { const s=App.shapes.find(x=>x.id===App.selectedId); if(s) drawHandles(s); }
+  drawRulers(w, h);
+}
+function lbl(t,y=4){ const C = getColors(); ctx.fillStyle=C.text; ctx.font='12px sans-serif'; ctx.textAlign='center'; ctx.fillText(t+' mm',0,y); }
+
+function drawRulers(w,h) {
+  const sz=30, off=10, ppmm=App.ppi/25.4;
+  const C = getColors();
+  
+  ctx.fillStyle=C.rulerBg; ctx.fillRect(off,off,w-off,sz); ctx.fillRect(off,off,sz,h-off);
+  ctx.strokeStyle=C.rulerTick; ctx.font='10px sans-serif'; ctx.fillStyle=C.text; ctx.beginPath();
+  const sx=off+sz; for(let mm=0;;mm++){
+    const x=sx+mm*ppmm; if(x>w)break;
+    const mj=mm%10===0, md=mm%5===0, ht=mj?12:(md?8:4);
+    ctx.moveTo(x,off+sz); ctx.lineTo(x,off+sz-ht); if(mj)ctx.fillText(mm,x+2,off+12);
+  }
+  const sy=off+sz; for(let mm=0;;mm++){
+    const y=sy+mm*ppmm; if(y>h)break;
+    const mj=mm%10===0, md=mm%5===0, wt=mj?12:(md?8:4);
+    ctx.moveTo(off+sz,y); ctx.lineTo(off+sz-wt,y);
+    if(mj){ ctx.save(); ctx.translate(off+4,y+10); ctx.rotate(-Math.PI/2); ctx.fillText(mm,0,0); ctx.restore(); }
+  }
+  ctx.stroke(); ctx.fillStyle=C.rulerCorner; ctx.fillRect(off,off,sz,sz); ctx.fillStyle='#38bdf8'; ctx.fillText("mm",off+6,off+18);
+}
+
+const H_SZ=8;
+function getHandles(s) {
+  const r=[], p=(x,y,c,i)=>r.push({x,y,c,i});
+  if(s.type==='rect'){ const w=mmToPx(s.w)/2,h=mmToPx(s.h)/2; p(s.x-w,s.y-h,'nw-resize',0); p(s.x,s.y-h,'n-resize',1); p(s.x+w,s.y-h,'ne-resize',2); p(s.x+w,s.y,'e-resize',3); p(s.x+w,s.y+h,'se-resize',4); p(s.x,s.y+h,'s-resize',5); p(s.x-w,s.y+h,'sw-resize',6); p(s.x-w,s.y,'w-resize',7); }
+  else if(s.type==='circle') p(s.x+mmToPx(s.r),s.y,'ew-resize',0);
+  else if(s.type==='line'){ const l=mmToPx(s.len),dx=(l/2)*Math.cos(s.angle),dy=(l/2)*Math.sin(s.angle); p(s.x-dx,s.y-dy,'crosshair',0); p(s.x+dx,s.y+dy,'crosshair',1); }
+  return r;
+}
+function drawHandles(s) { ctx.fillStyle='#fff'; ctx.strokeStyle='#38bdf8'; ctx.lineWidth=1; getHandles(s).forEach(h=>{ctx.beginPath();ctx.rect(h.x-H_SZ/2,h.y-H_SZ/2,H_SZ,H_SZ);ctx.fill();ctx.stroke();}); }
+function getMousePos(e){const r=canvas.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top};}
+function onPointerDown(e){
+  const m=getMousePos(e);
+  if(App.selectedId){const s=App.shapes.find(x=>x.id===App.selectedId); for(let h of getHandles(s)) if(Math.abs(m.x-h.x)<=H_SZ && Math.abs(m.y-h.y)<=H_SZ){App.dragging={type:'handle',shape:s,idx:h.i,startX:m.x,startY:m.y,orig:JSON.parse(JSON.stringify(s))};canvas.setPointerCapture(e.pointerId);return;}}
+  for(let i=App.shapes.length-1;i>=0;i--){const s=App.shapes[i];if(hitTest(s,m.x,m.y)){App.selectedId=s.id;App.dragging={type:'body',shape:s,startX:m.x,startY:m.y,origX:s.x,origY:s.y};updateUI();render();canvas.setPointerCapture(e.pointerId);return;}}
+  App.selectedId=null;updateUI();render();
+}
+function onPointerMove(e){
+  const m=getMousePos(e); if(!App.dragging)return;
+  const d=App.dragging, dx=m.x-d.startX, dy=m.y-d.startY;
+  if(d.type==='body'){d.shape.x=d.origX+dx;d.shape.y=d.origY+dy;}
+  else handleResize(d.shape,d.orig,d.idx,dx,dy);
+  render(); if(d.type==='handle')updatePropPanelValues();
+}
+function onPointerUp(e){App.dragging=null;canvas.releasePointerCapture(e.pointerId);saveState();updateUI();}
+function hitTest(s,mx,my){
+  if(s.type==='circle')return Math.hypot(mx-s.x,my-s.y)<=mmToPx(s.r);
+  if(s.type==='rect'){const w=mmToPx(s.w)/2,h=mmToPx(s.h)/2;return mx>=s.x-w&&mx<=s.x+w&&my>=s.y-h&&my<=s.y+h;}
+  if(s.type==='line'){
+    const l=mmToPx(s.len),x1=s.x-(l/2)*Math.cos(s.angle),y1=s.y-(l/2)*Math.sin(s.angle),x2=s.x+(l/2)*Math.cos(s.angle),y2=s.y+(l/2)*Math.sin(s.angle);
+    const A=mx-x1,B=my-y1,C=x2-x1,D=y2-y1,dot=A*C+B*D,lenSq=C*C+D*D,p=lenSq!==0?dot/lenSq:-1;
+    let xx,yy;if(p<0){xx=x1;yy=y1;}else if(p>1){xx=x2;yy=y2;}else{xx=x1+p*C;yy=y1+p*D;}
+    return (Math.pow(mx-xx,2)+Math.pow(my-yy,2))<=64;
+  }
+}
+function handleResize(s,orig,idx,dx,dy){
+  if(s.type==='rect'){
+    const w=mmToPx(orig.w),h=mmToPx(orig.h); let nL=orig.x-w/2,nR=orig.x+w/2,nT=orig.y-h/2,nB=orig.y+h/2;
+    if([0,6,7].includes(idx))nL+=dx; if([2,3,4].includes(idx))nR+=dx; if([0,1,2].includes(idx))nT+=dy; if([4,5,6].includes(idx))nB+=dy;
+    if(nR-nL<5)nR=nL+5; if(nB-nT<5)nB=nT+5; s.x=nL+(nR-nL)/2; s.y=nT+(nB-nT)/2; s.w=pxToMm(nR-nL); s.h=pxToMm(nB-nT);
+  } else if(s.type==='circle'){ s.r=pxToMm(Math.hypot((orig.x+mmToPx(orig.r))+dx-s.x,orig.y+dy-s.y)); }
+  else if(s.type==='line'){
+    const l=mmToPx(orig.len)/2; let x1=orig.x-l*Math.cos(orig.angle),y1=orig.y-l*Math.sin(orig.angle),x2=orig.x+l*Math.cos(orig.angle),y2=orig.y+l*Math.sin(orig.angle);
+    if(idx===0){x1+=dx;y1+=dy;}else{x2+=dx;y2+=dy;} s.x=(x1+x2)/2;s.y=(y1+y2)/2;s.len=pxToMm(Math.hypot(x2-x1,y2-y1));s.angle=Math.atan2(y2-y1,x2-x1);
+  }
+}
+function toggleSidebar(){document.getElementById('sidebar').classList.toggle('collapsed');setTimeout(resizeCanvas,320);}
+function updateUI(){
+  elShapeList.innerHTML=''; App.shapes.forEach(s=>{
+    const d=document.createElement('div');d.className=`shape-item ${s.id===App.selectedId?'active':''}`;
+    let t=s.type;if(s.type==='rect')t+=` ${Math.round(s.w)}×${Math.round(s.h)}`;if(s.type==='circle')t+=` Ø${Math.round(s.r*2)}`;if(s.type==='line')t+=` ${Math.round(s.len)}`;
+    d.innerHTML=`<span>${t}</span>`;d.onclick=()=>{App.selectedId=s.id;updateUI();render();};elShapeList.appendChild(d);
+  });
+  const s=App.shapes.find(x=>x.id===App.selectedId); elPropPanel.style.display=s?'block':'none';
+  if(s){
+    document.getElementById('selType').textContent=s.type; const d=document.getElementById('propDims');d.innerHTML='';
+    const mk=(l,v,cb)=>{const r=document.createElement('div');r.style.marginBottom='6px';r.innerHTML=`<label>${l} (mm)</label>`;const i=document.createElement('input');i.type='number';i.step='0.1';i.value=v.toFixed(2);i.onchange=(e)=>{cb(parseFloat(e.target.value));render();updateUI();saveState();};r.appendChild(i);d.appendChild(r);};
+    if(s.type==='rect'){mk('Width',s.w,v=>s.w=v);mk('Height',s.h,v=>s.h=v);}else if(s.type==='circle')mk('Diameter',s.r*2,v=>s.r=v/2);else if(s.type==='line'){mk('Length',s.len,v=>s.len=v);mk('Angle',s.angle*180/Math.PI,v=>s.angle=v*Math.PI/180);}
+  }
+}
+function updatePropPanelValues(){
+  if(!App.selectedId)return; const s=App.shapes.find(x=>x.id===App.selectedId), inps=document.getElementById('propDims').querySelectorAll('input');
+  if(s.type==='rect'&&inps.length>=2){inps[0].value=s.w.toFixed(2);inps[1].value=s.h.toFixed(2);}
+  else if(s.type==='circle'&&inps.length>=1)inps[0].value=(s.r*2).toFixed(2);
+  else if(s.type==='line'&&inps.length>=2){inps[0].value=s.len.toFixed(2);inps[1].value=(s.angle*180/Math.PI).toFixed(2);}
+}
+function deleteSelected(){App.shapes=App.shapes.filter(s=>s.id!==App.selectedId);App.selectedId=null;render();updateUI();}
+function centerSelected(){const s=App.shapes.find(x=>x.id===App.selectedId);if(s){const c=getCenter();s.x=c.x;s.y=c.y;render();}}
+
+/* --- CALIBRATION LOGIC --- */
+function openCalibration(){
+  document.getElementById('calibModal').classList.add('open');
+  App.calibPPI=App.ppi; 
+  requestAnimationFrame(() => {
+    resizeCalibCanvas(); 
+    updateCalibState(App.calibPPI);
+  });
+}
+function resizeCalibCanvas(){
+  const dpr=window.devicePixelRatio||1, w=window.innerWidth, h=window.innerHeight;
+  calibCanvas.width=w*dpr; calibCanvas.height=h*dpr; calibCanvas.style.width=w+'px'; calibCanvas.style.height=h+'px';
+  calibCtx.scale(dpr,dpr); drawCalibrationRuler();
+}
+window.adjustCalib=function(d){let n=App.calibPPI+d; if(n<10)n=10; updateCalibState(n);}
+function updateCalibState(p){ if(!p||isNaN(p))return; App.calibPPI=p; calibInput.value=p.toFixed(2); calibSlider.value=p; drawCalibrationRuler();}
+
+function calculateFromMeasurement() {
+  const screenVal = parseFloat(document.getElementById('calcScreenVal').value);
+  const realVal = parseFloat(document.getElementById('calcRealVal').value);
+  if(!screenVal || !realVal || realVal <= 0) { alert("Please enter valid positive numbers."); return; }
+  const newPPI = App.calibPPI * (screenVal / realVal);
+  updateCalibState(newPPI);
+}
+
+function drawCalibrationRuler(){
+  const w=calibCanvas.width/(window.devicePixelRatio||1), h=calibCanvas.height/(window.devicePixelRatio||1);
+  const ppmm=App.calibPPI/25.4;
+  calibCtx.clearRect(0,0,w,h);
+  
+  const modalBox = document.querySelector('.modal').getBoundingClientRect();
+  const modalTop = modalBox.top;
+  
+  let centerY = modalTop / 2;
+  const safeBottom = modalTop - 10;
+  const rulerBottom = centerY + 40;
+  
+  if (rulerBottom > safeBottom) {
+    centerY = 60; 
+    calibCanvas.style.zIndex = '105'; 
+  } else {
+    calibCanvas.style.zIndex = '101'; 
+    if (centerY < 60) centerY = 60;
+  }
+  
+  const startX = 40; 
+  calibCtx.strokeStyle='#38bdf8'; calibCtx.lineWidth=1.5; calibCtx.font='14px sans-serif'; calibCtx.textAlign='center'; calibCtx.fillStyle='#38bdf8';
+  calibCtx.beginPath(); calibCtx.moveTo(startX,centerY); calibCtx.lineTo(w,centerY); calibCtx.stroke();
+  
+  calibCtx.save(); calibCtx.strokeStyle='#ef4444'; calibCtx.fillStyle='#ef4444'; calibCtx.lineWidth=3;
+  calibCtx.beginPath(); calibCtx.moveTo(startX,centerY-40); calibCtx.lineTo(startX,centerY+40); calibCtx.stroke();
+  calibCtx.fillText("0",startX,centerY-50); calibCtx.restore();
+
+  const maxMM=(w-startX)/ppmm;
+  for(let mm=1;mm<=maxMM;mm++){
+    const x=startX+mm*ppmm; 
+    const mj=mm%10===0, md=mm%5===0, ht=mj?30:(md?20:10);
+    calibCtx.beginPath(); calibCtx.moveTo(x,centerY-ht/2); calibCtx.lineTo(x,centerY+ht/2); calibCtx.stroke();
+    if(mj) calibCtx.fillText(mm/10,x,centerY+35);
+  }
+  calibCtx.fillText("cm",startX+25,centerY-20);
+}
+
+function applyCalibration(){ setPPI(App.calibPPI); saveState(); document.getElementById('calibModal').classList.remove('open'); }
+
+init();
+</script>
+</body>
+</html>
